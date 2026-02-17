@@ -8,6 +8,18 @@ namespace Common
 {
     public class Squirrel3
     {
+        public readonly struct State
+        {
+            public readonly int Seed;
+            public readonly int Counter;
+
+            public State(int seed, int counter)
+            {
+                Seed = seed;
+                Counter = counter;
+            }
+        }
+
         private static Squirrel3 _instance;
         public static Squirrel3 Instance
         {
@@ -45,6 +57,17 @@ namespace Common
         public void ResetState()
         {
             _n = 0;
+        }
+
+        public State CaptureState()
+        {
+            return new State(_seed, _n);
+        }
+
+        public void RestoreState(State state)
+        {
+            _seed = state.Seed;
+            _n = state.Counter;
         }
         
         public float Next()

@@ -1,15 +1,12 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using BulletFury.Data;
-using Common;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Events;
-using UnityEngine.Profiling;
 
 namespace BulletFury
 {
@@ -48,7 +45,7 @@ namespace BulletFury
     {
         public void Execute(ref Vector3 position, ref Quaternion rotation, float deltaTime);
     }
-    
+
     [DefaultExecutionOrder(-1000)]
     public class BulletSpawner : MonoBehaviour
     {
@@ -60,19 +57,12 @@ namespace BulletFury
         [SerializeField] private SpawnShapeData spawnShapeData;
         
         [SerializeField] private BurstData burstData;
-        [SerializeReference, Obsolete]
-        private List<IBulletModule> bulletModules = new ();
-        
-        [SerializeReference, Obsolete]
-        private List<IBulletInitModule> bulletInitModules = new ();
-        
-        [SerializeReference, Obsolete]
-        private List<IBulletSpawnModule> spawnModules = new ();
         
         [SerializeReference]
         private List<IBaseBulletModule> allModules = new ();
 
         private bool _isStopped = false;
+        private bool _simulationPaused = false;
         
         // Unity Event that fires when a bullet reaches end-of-life, can be set in the inspector like a button 
         // ReSharper disable once InconsistentNaming
@@ -91,9 +81,9 @@ namespace BulletFury
         public BulletMainData Main => main;
         public SpawnShapeData SpawnShapeData => spawnShapeData;
         public BurstData BurstData => burstData;
+        public float LastSimulationDeltaTime => _runtime.LastSimulationDeltaTime;
 
         private bool _enabled = true;
-        private float _currentTime = float.MaxValue;
         private Vector3 _previousPos, _previousRot;
         private bool _hasSpawnedSinceEnable = false;
         private int _bulletCount;
@@ -103,6 +93,8 @@ namespace BulletFury
         private Collider2D[] _hit = new Collider2D[MaxColliderHitsPerBullet];
         private ContactFilter2D _filter;
         private static readonly IBulletHitHandler[] EmptyHitHandlers = Array.Empty<IBulletHitHandler>();
+        private static readonly ColliderInstanceIdComparer ColliderComparer = new();
+        private static readonly BulletHitHandlerInstanceComparer HandlerComparer = new();
         private readonly Dictionary<int, IBulletHitHandler[]> _handlerCache = new();
         private readonly List<int> _handlerCacheKeysToRemove = new(64);
         private readonly List<HitDispatchRecord> _hitDispatchQueue = new(256);
@@ -118,12 +110,20 @@ namespace BulletFury
         
         private (BulletRenderData renderData, Camera cam)? _queuedRenderData;
 
-        private Squirrel3 _rnd = new Squirrel3();
+        private readonly BulletSpawnerRuntime _runtime = new();
         private readonly List<Vector3> _spawnPositions = new(256);
         private readonly List<Quaternion> _spawnRotations = new(256);
-        private bool _spawnRoutineRunning;
-        private int _spawnRoutineVersion;
-
+        private float _fireCooldownRemaining;
+        private float _nextShotFireRate;
+        private float _activeShotFireRate;
+        private float _spawnSequenceDeltaTime;
+        private bool _spawnSequenceActive;
+        private bool _spawnSequenceIgnoreFireRate;
+        private int _spawnSequenceBurstIndex;
+        private float _spawnSequenceBurstDelayRemaining;
+        private Transform _spawnSequenceOriginTransform;
+        private Vector3 _spawnSequenceFallbackPosition;
+        private Vector3 _spawnSequenceFallbackUp;
         private bool _disposed = false;
         public bool Disposed => _disposed;
         private int _handlerCachePruneCounter;
@@ -133,7 +133,7 @@ namespace BulletFury
             public BulletContainer Bullet;
             public IBulletHitHandler[] Handlers;
         }
-        
+
         public struct RenderQueueData
         {
             public BulletRenderData RenderData;
@@ -146,6 +146,29 @@ namespace BulletFury
         }
         private static SortedList<float, RenderQueueData> _renderQueue = new();
         public static SortedList<float, RenderQueueData> RenderQueue => _renderQueue;
+
+        [Serializable]
+        public sealed class SpawnerState
+        {
+            public int BulletCount;
+            public BulletContainer[] Bullets = Array.Empty<BulletContainer>();
+            public Vector3 PreviousPosition;
+            public Vector3 PreviousRotation;
+            public bool IsStopped;
+            public bool HasSpawnedSinceEnable;
+            public float FireCooldownRemaining;
+            public float NextShotFireRate;
+            public float ActiveShotFireRate;
+            public bool SpawnSequenceActive;
+            public bool SpawnSequenceIgnoreFireRate;
+            public int SpawnSequenceBurstIndex;
+            public float SpawnSequenceBurstDelayRemaining;
+            public Transform SpawnSequenceOriginTransform;
+            public Vector3 SpawnSequenceFallbackPosition;
+            public Vector3 SpawnSequenceFallbackUp;
+            public float SpawnSequenceDeltaTime;
+            public object RuntimeState;
+        }
 
         public void Start()
         {
@@ -161,9 +184,8 @@ namespace BulletFury
 
         private void OnEnable()
         {
-            if (burstData.delay > 0)
-                _currentTime = Main.FireRate - burstData.delay;
             _isStopped = !main.PlayOnEnable;
+            ResetSpawnSchedulingState();
         }
 
         public void SetPreset(BulletSpawnerPreset preset)
@@ -234,6 +256,47 @@ namespace BulletFury
             _isStopped = false;
         }
 
+        public void SetSimulationPaused(bool paused)
+        {
+            _simulationPaused = paused;
+        }
+
+        private void ResetSpawnerRuntimeState()
+        {
+            if (_moduleExecutionCachesDirty)
+                RebuildModuleExecutionCaches();
+
+            _previousPos = transform.position;
+            _previousRot = transform.eulerAngles;
+            _queuedRenderData = null;
+            _runtime.ResetRuntimeState();
+            ResetSpawnSchedulingState();
+        }
+
+        private void ResetSpawnSchedulingState()
+        {
+            _spawnSequenceActive = false;
+            _spawnSequenceIgnoreFireRate = false;
+            _spawnSequenceBurstIndex = 0;
+            _spawnSequenceBurstDelayRemaining = 0f;
+            _spawnSequenceOriginTransform = null;
+            _spawnSequenceFallbackPosition = Vector3.zero;
+            _spawnSequenceFallbackUp = Vector3.up;
+            _spawnSequenceDeltaTime = 0f;
+            _activeShotFireRate = 0f;
+            _nextShotFireRate = SampleFireRate();
+            _fireCooldownRemaining = Mathf.Max(0f, burstData.delay);
+            _hasSpawnedSinceEnable = false;
+        }
+
+        private float SampleFireRate()
+        {
+            if (_moduleExecutionCachesDirty)
+                RebuildModuleExecutionCaches();
+
+            return Mathf.Max(0f, _runtime.Sample(main.FireRate));
+        }
+
         public void EnsureSimulationInitialized()
         {
             if (_bullets.IsCreated && !_disposed)
@@ -266,11 +329,8 @@ namespace BulletFury
             }
 
             _bulletCount = 0;
-            _spawnRoutineRunning = false;
-            _spawnRoutineVersion++;
-            _hasSpawnedSinceEnable = false;
-            _currentTime = burstData.delay > 0 ? Main.FireRate - burstData.delay : Main.FireRate;
             _isStopped = !main.PlayOnEnable;
+            ResetSpawnerRuntimeState();
             _filter = new ContactFilter2D
             {
                 useLayerMask = true,
@@ -296,12 +356,109 @@ namespace BulletFury
             }
 
             _bulletCount = 0;
-            _spawnRoutineVersion++;
-            _currentTime = burstData.delay > 0 ? Main.FireRate - burstData.delay : Main.FireRate;
-            _hasSpawnedSinceEnable = false;
+            ResetSpawnerRuntimeState();
             _hitDispatchQueue.Clear();
             _handlerCache.Clear();
             _queuedRenderData = null;
+        }
+
+        public SpawnerState CaptureState(SpawnerState reusableState = null)
+        {
+            EnsureSimulationInitialized();
+            if (_moduleExecutionCachesDirty)
+                RebuildModuleExecutionCaches();
+
+            var state = reusableState ?? new SpawnerState();
+            state.BulletCount = _bulletCount;
+
+            if (state.Bullets == null || state.Bullets.Length < _bulletCount)
+                state.Bullets = new BulletContainer[_bulletCount];
+            for (int i = 0; i < _bulletCount; i++)
+                state.Bullets[i] = _bullets[i];
+
+            state.PreviousPosition = _previousPos;
+            state.PreviousRotation = _previousRot;
+            state.IsStopped = _isStopped;
+            state.HasSpawnedSinceEnable = _hasSpawnedSinceEnable;
+            state.FireCooldownRemaining = _fireCooldownRemaining;
+            state.NextShotFireRate = _nextShotFireRate;
+            state.ActiveShotFireRate = _activeShotFireRate;
+            state.SpawnSequenceActive = _spawnSequenceActive;
+            state.SpawnSequenceIgnoreFireRate = _spawnSequenceIgnoreFireRate;
+            state.SpawnSequenceBurstIndex = _spawnSequenceBurstIndex;
+            state.SpawnSequenceBurstDelayRemaining = _spawnSequenceBurstDelayRemaining;
+            state.SpawnSequenceOriginTransform = _spawnSequenceOriginTransform;
+            state.SpawnSequenceFallbackPosition = _spawnSequenceFallbackPosition;
+            state.SpawnSequenceFallbackUp = _spawnSequenceFallbackUp;
+            state.SpawnSequenceDeltaTime = _spawnSequenceDeltaTime;
+            state.RuntimeState = _runtime.CaptureState();
+
+            return state;
+        }
+
+        public void ApplyState(SpawnerState state)
+        {
+            if (state == null)
+                throw new ArgumentNullException(nameof(state));
+
+            EnsureSimulationInitialized();
+            if (_moduleExecutionCachesDirty)
+                RebuildModuleExecutionCaches();
+
+            int previousCount = _bulletCount;
+            int sourceCount = state.Bullets?.Length ?? 0;
+            _bulletCount = Mathf.Clamp(Mathf.Min(state.BulletCount, sourceCount), 0, _bullets.Length);
+            for (int i = 0; i < _bulletCount; i++)
+                _bullets[i] = state.Bullets[i];
+
+            int clearCount = Mathf.Max(previousCount, _bulletCount);
+            for (int i = _bulletCount; i < clearCount; i++)
+            {
+                _bullets[i] = default;
+                _bulletTransforms[i] = Matrix4x4.zero;
+                _bulletColors[i] = float4.zero;
+                _bulletTimes[i] = 0f;
+            }
+
+            _previousPos = state.PreviousPosition;
+            _previousRot = state.PreviousRotation;
+            _isStopped = state.IsStopped;
+            _hasSpawnedSinceEnable = state.HasSpawnedSinceEnable;
+            _fireCooldownRemaining = state.FireCooldownRemaining;
+            _nextShotFireRate = state.NextShotFireRate;
+            _activeShotFireRate = state.ActiveShotFireRate;
+            _spawnSequenceActive = state.SpawnSequenceActive;
+            _spawnSequenceIgnoreFireRate = state.SpawnSequenceIgnoreFireRate;
+            _spawnSequenceBurstIndex = state.SpawnSequenceBurstIndex;
+            _spawnSequenceBurstDelayRemaining = state.SpawnSequenceBurstDelayRemaining;
+            _spawnSequenceOriginTransform = state.SpawnSequenceOriginTransform;
+            _spawnSequenceFallbackPosition = state.SpawnSequenceFallbackPosition;
+            _spawnSequenceFallbackUp = state.SpawnSequenceFallbackUp;
+            _spawnSequenceDeltaTime = state.SpawnSequenceDeltaTime;
+            _runtime.RestoreState(state.RuntimeState);
+
+            for (int i = 0; i < _bulletCount; i++)
+            {
+                var bullet = _bullets[i];
+                if (bullet.Dead == 1 || bullet.EndOfLife == 1)
+                {
+                    _bulletTransforms[i] = Matrix4x4.zero;
+                    _bulletColors[i] = float4.zero;
+                    _bulletTimes[i] = 0f;
+                    continue;
+                }
+
+                var rot = IsInvalidRotation(bullet.Rotation) ? Quaternion.identity : bullet.Rotation;
+                _bulletTransforms[i] = Matrix4x4.TRS(bullet.Position, rot, Vector3.one * bullet.CurrentSize);
+                _bulletColors[i] = (Vector4)bullet.Color;
+                _bulletTimes[i] = bullet.CurrentLifeSeconds;
+            }
+
+            _bulletsFree = true;
+            _queuedRenderData = null;
+            _spawnPositions.Clear();
+            _spawnRotations.Clear();
+            _hitDispatchQueue.Clear();
         }
 
         private void FixedUpdate()
@@ -363,7 +520,16 @@ namespace BulletFury
 
         private void Update()
         {
-            UpdateAllBullets(renderData.Data.Camera, Time.deltaTime);
+            if (_simulationPaused)
+            {
+                // Keep render data live while simulation is paused.
+                if (_queuedRenderData == null)
+                    _queuedRenderData = (renderData, renderData.Data.Camera);
+            }
+            else
+            {
+                UpdateAllBullets(renderData.Data.Camera, Time.deltaTime);
+            }
             if (_queuedRenderData == null || _disposed || _bulletCount == 0) return;
             float priority = -_queuedRenderData.Value.renderData.Priority;
             while (_renderQueue.ContainsKey(priority))
@@ -386,15 +552,25 @@ namespace BulletFury
             if (!_bullets.IsCreated || _disposed)
                 EnsureSimulationInitialized();
             if (!_bulletsFree || this == null || renderData.Data.Texture == null) return;
-            var deltaTime = dt ?? Time.deltaTime;
-            
-            // increment the current timer
-            _currentTime += deltaTime;
-            
+            var deltaTime = Mathf.Max(0f, dt ?? Time.deltaTime);
+            _runtime.AdvanceSimulation(deltaTime);
+
+            if (!_spawnSequenceActive)
+                _fireCooldownRemaining = Mathf.Max(0f, _fireCooldownRemaining - deltaTime);
+
             if (Main.FireMode == FireMode.Automatic && enabled && !_isStopped)
-                Spawn(transform, deltaTime);
-            if (_bulletCount == 0) return;
-            
+                TryStartSpawnSequence(deltaTime, transform, transform.position, transform.up, false, false);
+
+            ProcessActiveSpawnSequence(deltaTime);
+
+            if (_bulletCount == 0)
+            {
+                _previousPos = transform.position;
+                _previousRot = transform.eulerAngles;
+                _queuedRenderData = (renderData, cam);
+                return;
+            }
+
             _bulletsFree = false;
 
             var job = new BulletJob
@@ -529,6 +705,21 @@ namespace BulletFury
             return float.IsNaN(q.x) || float.IsNaN(q.y) || float.IsNaN(q.z) || float.IsNaN(q.w) || q.w == 0;
         }
 
+        private ISpawnerRuntimeModule ResolveRuntimeModule()
+        {
+            foreach (var module in allModules)
+            {
+                if (module is not ISpawnerRuntimeModuleProvider runtimeModuleProvider)
+                    continue;
+
+                var runtimeModule = runtimeModuleProvider.CreateRuntimeModule();
+                if (runtimeModule != null)
+                    return runtimeModule;
+            }
+
+            return null;
+        }
+
         private void RebuildModuleExecutionCaches()
         {
             _parallelBulletModules.Clear();
@@ -540,6 +731,7 @@ namespace BulletFury
                 else if (module is IBulletModule mainThreadModule)
                     _mainThreadBulletModules.Add(mainThreadModule);
             }
+            _runtime.SetRuntimeModule(ResolveRuntimeModule());
 
             _moduleExecutionCachesDirty = false;
         }
@@ -604,7 +796,7 @@ namespace BulletFury
                     Physics2D.OverlapCircle(new Vector2(bullet.Position.x, bullet.Position.y), bullet.ColliderSize, _filter, _hit);
                 if (numHit > 0)
                 {
-
+                    Array.Sort(_hit, 0, numHit, ColliderComparer);
                     for (int j = 0; j < numHit; ++j)
                     {
                         var hit = _hit[j];
@@ -627,6 +819,7 @@ namespace BulletFury
                     bullet.Rotation.eulerAngles.z, _filter, _hit);
                 if (numHit > 0)
                 {
+                    Array.Sort(_hit, 0, numHit, ColliderComparer);
                     for (int j = 0; j < numHit; ++j)
                     {
                         var hit = _hit[j];
@@ -668,6 +861,7 @@ namespace BulletFury
             if (handlers == null || handlers.Length == 0)
                 return EmptyHitHandlers;
 
+            Array.Sort(handlers, HandlerComparer);
             _handlerCache[id] = handlers;
             return handlers;
         }
@@ -759,7 +953,7 @@ namespace BulletFury
 
         public void Spawn(Vector3 position, Vector3 up, float deltaTime)
         {
-            TryStartSpawn(deltaTime, null, position, up, false);
+            TryStartSpawnSequence(deltaTime, null, position, up, false);
         }
 
         /// <summary>
@@ -768,191 +962,239 @@ namespace BulletFury
         /// </summary>
         public void SpawnImmediate(Vector3 position, Vector3 up, float deltaTime)
         {
-            TryStartSpawn(deltaTime, null, position, up, true);
+            TryStartSpawnSequence(deltaTime, null, position, up, true);
         }
 
         public void Spawn(Transform obj, float deltaTime)
         {
             if (obj == null) return;
-            TryStartSpawn(deltaTime, obj, obj.position, obj.up, false);
+            TryStartSpawnSequence(deltaTime, obj, obj.position, obj.up, false);
         }
 
-        private void TryStartSpawn(float deltaTime, Transform originTransform, Vector3 fallbackPosition, Vector3 fallbackUp, bool ignoreFireRate)
+        private bool TryStartSpawnSequence(
+            float deltaTime,
+            Transform originTransform,
+            Vector3 fallbackPosition,
+            Vector3 fallbackUp,
+            bool ignoreFireRate,
+            bool processImmediately = true)
         {
-            if (_spawnRoutineRunning) return;
-            _ = SpawnRoutine(deltaTime, originTransform, fallbackPosition, fallbackUp, _spawnRoutineVersion, ignoreFireRate);
+            if (_spawnSequenceActive || _disposed || !_enabled || !gameObject.activeInHierarchy)
+                return false;
+            if (!CheckBulletsRemaining())
+                return false;
+            if (!ignoreFireRate && (_isStopped || _fireCooldownRemaining > 0f))
+                return false;
+
+            _spawnSequenceActive = true;
+            _spawnSequenceIgnoreFireRate = ignoreFireRate;
+            _spawnSequenceBurstIndex = 0;
+            _spawnSequenceBurstDelayRemaining = 0f;
+            _spawnSequenceOriginTransform = originTransform;
+            _spawnSequenceFallbackPosition = fallbackPosition;
+            _spawnSequenceFallbackUp = fallbackUp.sqrMagnitude < 0.0001f ? Vector3.up : fallbackUp.normalized;
+            _spawnSequenceDeltaTime = Mathf.Max(0f, deltaTime);
+            _activeShotFireRate = _nextShotFireRate;
+            _hasSpawnedSinceEnable = true;
+
+            OnWeaponFired?.Invoke();
+            OnWeaponFiredEvent?.Invoke();
+
+            if (processImmediately && _bulletsFree)
+                ProcessActiveSpawnSequence(0f);
+            return true;
         }
 
-        private static async Task AwaitSpawnTickAsync()
+        private void ProcessActiveSpawnSequence(float deltaTime)
         {
-            #if UNITY_2023_1_OR_NEWER
-            if (Application.isPlaying)
-                await Awaitable.NextFrameAsync();
-            else
-                await Task.Yield();
-            #else
-            await Task.Yield();
-            #endif
-        }
+            if (!_spawnSequenceActive)
+                return;
+            if (!_spawnSequenceIgnoreFireRate && _isStopped)
+                return;
 
-        private async Task SpawnRoutine(float deltaTime, Transform originTransform, Vector3 fallbackPosition, Vector3 fallbackUp, int routineVersion, bool ignoreFireRate)
-        {
-            _spawnRoutineRunning = true;
-            try
+            if (_spawnSequenceBurstDelayRemaining > 0f)
             {
-                while (!_bulletsFree)
-                    await AwaitSpawnTickAsync();
-
-                if (_disposed || routineVersion != _spawnRoutineVersion) return;
-                var hasBulletsLeft = CheckBulletsRemaining();
-                
-                // don't spawn a bullet if we haven't reached the correct fire rate
-                if ((!ignoreFireRate && _currentTime < Main.FireRate) || !hasBulletsLeft || !_enabled)
+                _spawnSequenceBurstDelayRemaining -= deltaTime;
+                if (_spawnSequenceBurstDelayRemaining > 0f)
                     return;
-                // keep timer unchanged for forced/event-driven spawns
-                if (!ignoreFireRate)
-                    _currentTime = 0;
-
-                if (!gameObject.activeInHierarchy) return;
-                
-                if (!_hasSpawnedSinceEnable)
-                {
-                    if (Mathf.Approximately(burstData.delay, 0))
-                        _currentTime = Main.FireRate;
-                    
-                    _hasSpawnedSinceEnable = true;
-                }
-                
-                OnWeaponFired?.Invoke();
-                OnWeaponFiredEvent?.Invoke();
-
-                for (int burstNum = 0; burstNum < burstData.burstCount; ++burstNum)
-                {
-                    if (_disposed || routineVersion != _spawnRoutineVersion) return;
-                    while (!ignoreFireRate && _isStopped && !_disposed)
-                        await AwaitSpawnTickAsync();
-                    if (_disposed || (!ignoreFireRate && _isStopped) || routineVersion != _spawnRoutineVersion) return;
-                    _spawnPositions.Clear();
-                    _spawnRotations.Clear();
-
-                    int idx = 0;
-                    spawnShapeData.Spawn((point, dir) =>
-                    {
-                        var pos = (Vector3) point;
-                        var originUp = originTransform == null ? fallbackUp : originTransform.up;
-                        var originPosition = originTransform == null ? fallbackPosition : originTransform.position;
-                        var extraRotation = Quaternion.LookRotation(Vector3.forward, originUp);
-                        
-                        var fireRate = idx == 0 ? Main.FireRate : 0;
-                        if (!burstData.burstsUpdatePositionEveryBullet)
-                            fireRate = burstNum == 0 ? fireRate : 0;
-                        
-                        foreach (var module in allModules)
-                            if (module is IBulletSpawnModule mod)
-                                mod.Execute(ref pos, ref extraRotation, fireRate);
-                        
-                        Vector3 rotatedDir = extraRotation * dir;
-                        Quaternion rotation = Quaternion.LookRotation(Vector3.forward, rotatedDir);
-                        Vector3 spawnPosition = originPosition + extraRotation * pos;
-
-                        _spawnRotations.Add(rotation);
-                        _spawnPositions.Add(spawnPosition);
-                        ++idx;
-                    }, Squirrel3.Instance);
-
-                    for (int i = 0; i < _spawnPositions.Count; i++)
-                    {
-                        var j = _bulletCount;
-                        if ((burstData.maxActiveBullets == 0 && j >= _bullets.Length) ||
-                            (burstData.maxActiveBullets > 0 && j >= burstData.maxActiveBullets))
-                        {
-                            #if UNITY_EDITOR
-                            Debug.LogWarning($"Tried to spawn too many bullets on manager {name}, didn't spawn one.");
-                            #endif
-                            return;
-                        }
-
-                        var bullet = new BulletContainer
-                        {
-                            Id = j,
-                            Dead = 0,
-                            Position = _spawnPositions[i],
-                            Rotation = _spawnRotations[i],
-                            Direction = _spawnRotations[i]
-                        };
-                        
-                        bullet.Damage = main.Damage;
-                        bullet.Lifetime = main.Lifetime;
-                        bullet.Speed = main.Speed;
-                        bullet.CurrentSpeed = bullet.Speed;
-                        bullet.AngularVelocity = 0f;
-                        bullet.StartSize = main.StartSize.GetValue(_rnd);
-                        bullet.CurrentSize = bullet.StartSize;
-                        bullet.StartColor = main.StartColor;
-                        bullet.Color = bullet.StartColor;
-                        bullet.ColliderSize = bullet.CurrentSize * main.ColliderSize / 2f;
-                        bullet.UseCapsule = main.ColliderType == ColliderType.Capsule ? (byte) 1 : (byte) 0;
-                        bullet.CapsuleLength = main.CapsuleLength;
-                        bullet.MovingToOrigin = 0;
-
-                        foreach (var module in allModules)
-                        {
-                            if (module is IBulletInitModule initMod)
-                                initMod.Execute(ref bullet);
-                            if (module is IBulletModule bulletMod)
-                                bulletMod.Execute(ref bullet, deltaTime);
-                        }
-
-                        bullet.Speed += burstNum * burstData.stackSpeedIncrease;
-                        bullet.CurrentSpeed += burstNum * burstData.stackSpeedIncrease;
-                        _bullets[j] = bullet;
-                        
-                        ++_bulletCount;
-                        OnBulletSpawned?.Invoke(j, _bullets[j]);
-                        OnBulletSpawnedEvent?.Invoke(j, _bullets[j]);
-                    }
-
-                    var timer = burstData.burstDelay;
-                    var lastTime = Time.realtimeSinceStartup;
-                    while (timer > 0f)
-                    {
-                        if (_disposed || routineVersion != _spawnRoutineVersion) return;
-                        if (_isStopped)
-                        {
-                            lastTime = Time.realtimeSinceStartup;
-                            await AwaitSpawnTickAsync();
-                            continue;
-                        }
-
-                        var currentTime = Time.realtimeSinceStartup;
-                        var elapsed = Mathf.Max(0f, currentTime - lastTime);
-                        lastTime = currentTime;
-                        timer -= elapsed;
-                        await AwaitSpawnTickAsync();
-                    }
-                }
+                _spawnSequenceBurstDelayRemaining = 0f;
             }
-            finally
+
+            while (_spawnSequenceActive)
             {
-                _spawnRoutineRunning = false;
+                EmitBurst(_spawnSequenceBurstIndex);
+                if (!_spawnSequenceActive)
+                    return;
+
+                _spawnSequenceBurstIndex++;
+                if (_spawnSequenceBurstIndex >= Mathf.Max(1, burstData.burstCount))
+                {
+                    CompleteSpawnSequence();
+                    return;
+                }
+
+                _spawnSequenceBurstDelayRemaining = Mathf.Max(0f, burstData.burstDelay);
+                if (_spawnSequenceBurstDelayRemaining > 0f)
+                    return;
             }
         }
-        
+
+        private void EmitBurst(int burstNum)
+        {
+            _spawnPositions.Clear();
+            _spawnRotations.Clear();
+
+            int idx = 0;
+            spawnShapeData.Spawn((point, dir) =>
+            {
+                var pos = (Vector3)point;
+                var originUp = _spawnSequenceOriginTransform == null
+                    ? _spawnSequenceFallbackUp
+                    : _spawnSequenceOriginTransform.up;
+                var originPosition = _spawnSequenceOriginTransform == null
+                    ? _spawnSequenceFallbackPosition
+                    : _spawnSequenceOriginTransform.position;
+                var extraRotation = Quaternion.LookRotation(Vector3.forward, originUp);
+
+                float moduleDelta = idx == 0 ? _activeShotFireRate : 0f;
+                if (!burstData.burstsUpdatePositionEveryBullet)
+                    moduleDelta = burstNum == 0 ? moduleDelta : 0f;
+
+                foreach (var module in allModules)
+                {
+                    if (module is not IBulletSpawnModule spawnModule)
+                        continue;
+                    spawnModule.Execute(ref pos, ref extraRotation, moduleDelta);
+                }
+
+                Vector3 rotatedDir = extraRotation * dir;
+                Quaternion rotation = Quaternion.LookRotation(Vector3.forward, rotatedDir);
+                Vector3 spawnPosition = originPosition + extraRotation * pos;
+
+                _spawnRotations.Add(rotation);
+                _spawnPositions.Add(spawnPosition);
+                idx++;
+            }, _runtime.Random);
+
+            for (int i = 0; i < _spawnPositions.Count; i++)
+            {
+                if (!CheckBulletsRemaining())
+                {
+                    #if UNITY_EDITOR
+                    Debug.LogWarning($"Tried to spawn too many bullets on manager {name}, didn't spawn one.");
+                    #endif
+                    CompleteSpawnSequence();
+                    return;
+                }
+
+                var bulletIndex = _bulletCount;
+                var bullet = new BulletContainer
+                {
+                    Id = bulletIndex,
+                    Dead = 0,
+                    Position = _spawnPositions[i],
+                    Rotation = _spawnRotations[i],
+                    Direction = _spawnRotations[i]
+                };
+
+                bullet.Damage = _runtime.Sample(main.Damage);
+                bullet.Lifetime = _runtime.Sample(main.Lifetime);
+                bullet.Speed = _runtime.Sample(main.Speed);
+                bullet.CurrentSpeed = bullet.Speed;
+                bullet.AngularVelocity = 0f;
+                bullet.StartSize = _runtime.Sample(main.StartSize);
+                bullet.CurrentSize = bullet.StartSize;
+                bullet.StartColor = main.StartColor;
+                bullet.Color = bullet.StartColor;
+                bullet.ColliderSize = bullet.CurrentSize * main.ColliderSize / 2f;
+                bullet.UseCapsule = main.ColliderType == ColliderType.Capsule ? (byte)1 : (byte)0;
+                bullet.CapsuleLength = main.CapsuleLength;
+                bullet.MovingToOrigin = 0;
+
+                foreach (var module in allModules)
+                {
+                    if (module is IBulletInitModule initMod)
+                        initMod.Execute(ref bullet);
+                    if (module is IBulletModule bulletMod)
+                        bulletMod.Execute(ref bullet, _spawnSequenceDeltaTime);
+                }
+
+                bullet.Speed += burstNum * burstData.stackSpeedIncrease;
+                bullet.CurrentSpeed += burstNum * burstData.stackSpeedIncrease;
+                _bullets[bulletIndex] = bullet;
+
+                _bulletCount++;
+                OnBulletSpawned?.Invoke(bulletIndex, _bullets[bulletIndex]);
+                OnBulletSpawnedEvent?.Invoke(bulletIndex, _bullets[bulletIndex]);
+            }
+        }
+
+        private void CompleteSpawnSequence()
+        {
+            bool ignoredFireRate = _spawnSequenceIgnoreFireRate;
+            _spawnSequenceActive = false;
+            _spawnSequenceIgnoreFireRate = false;
+            _spawnSequenceBurstIndex = 0;
+            _spawnSequenceBurstDelayRemaining = 0f;
+            _spawnSequenceOriginTransform = null;
+            _spawnSequenceDeltaTime = 0f;
+
+            if (!ignoredFireRate)
+            {
+                _nextShotFireRate = SampleFireRate();
+                _fireCooldownRemaining = _nextShotFireRate;
+            }
+        }
+
         /// <summary>
         /// Activate any waiting bullets.
         /// Use this when you want to do bullet tracing.
         /// </summary>
         [ContextMenu("Activate Waiting")]
-        public async void ActivateWaitingBullets()
+        public void ActivateWaitingBullets()
         {
-            await Awaitable.EndOfFrameAsync();
-            for (int i = 0; i < _bullets.Length; i++)
+            if (!_bullets.IsCreated || _disposed)
+                return;
+
+            for (int i = 0; i < _bulletCount; i++)
             {
                 var bullet = _bullets[i];
                 bullet.Waiting = 0;
                 _bullets[i] = bullet;
             }
-            
+        }
+
+        private sealed class ColliderInstanceIdComparer : IComparer<Collider2D>
+        {
+            public int Compare(Collider2D x, Collider2D y)
+            {
+                if (ReferenceEquals(x, y))
+                    return 0;
+                if (x == null)
+                    return 1;
+                if (y == null)
+                    return -1;
+                return x.GetInstanceID().CompareTo(y.GetInstanceID());
+            }
+        }
+
+        private sealed class BulletHitHandlerInstanceComparer : IComparer<IBulletHitHandler>
+        {
+            public int Compare(IBulletHitHandler x, IBulletHitHandler y)
+            {
+                if (ReferenceEquals(x, y))
+                    return 0;
+                if (x == null)
+                    return 1;
+                if (y == null)
+                    return -1;
+
+                var xObject = x as UnityEngine.Object;
+                var yObject = y as UnityEngine.Object;
+                int xId = xObject != null ? xObject.GetInstanceID() : 0;
+                int yId = yObject != null ? yObject.GetInstanceID() : 0;
+                return xId.CompareTo(yId);
+            }
         }
 
         private void OnValidate()

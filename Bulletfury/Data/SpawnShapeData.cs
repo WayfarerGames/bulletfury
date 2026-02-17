@@ -65,7 +65,11 @@ namespace BulletFury
             directionArc = 360f;
         }
 
-        private void SpawnGroup(Vector2 position, Vector2 direction, Action<Vector2, Vector2> onGetPoint)
+        private void SpawnGroup(
+            Vector2 position,
+            Vector2 direction,
+            Action<Vector2, Vector2> onGetPoint,
+            float sampledGroupRadius)
         {
             var offset = 360f / (2 * numPerGroup) - ((0.5f * 360)) + 90f;
             var anglePerSide = 360 / numPerGroup;
@@ -76,20 +80,26 @@ namespace BulletFury
 
                 angle *= Mathf.Deg2Rad;
                 
-                Vector2 pos = Quaternion.LookRotation(Vector3.forward, direction) * new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * groupRadius;
+                Vector2 pos = Quaternion.LookRotation(Vector3.forward, direction) *
+                              new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * sampledGroupRadius;
                 
                 onGetPoint (pos + position, groupDirection ? direction : (pos).normalized);
             }
         }
 
         
-        private void SpawnLine (Action<Vector2, Vector2> onGetPoint, Squirrel3 rnd)
+        private void SpawnLine(
+            Action<Vector2, Vector2> onGetPoint,
+            Squirrel3 rnd,
+            float sampledDirectionArc,
+            float sampledRadius,
+            float sampledGroupRadius)
         {
             Vector2 dir = Vector2.up;
                 
             if (spawnDir == SpawnDir.Randomised)
             {
-                var rndAngle = rnd.Next() * directionArc * Mathf.Deg2Rad;
+                var rndAngle = rnd.Next() * sampledDirectionArc * Mathf.Deg2Rad;
                 dir = new Vector2(Mathf.Cos(rndAngle), Mathf.Sin(rndAngle));
             }
 
@@ -100,14 +110,14 @@ namespace BulletFury
                 var t = i / (float) numPerSide;
                 t += (1f / numPerSide) / 2f;
                 var point = Vector2.Lerp(new Vector2(-1, 0), new Vector2(1, 0), t);
-                point *= radius;
+                point *= sampledRadius;
                     
                 // spawn a group of bullets
                 
                 if (numPerGroup == 1)
                     onGetPoint?.Invoke(point, dir);
                 else 
-                    SpawnGroup(point, dir, onGetPoint);
+                    SpawnGroup(point, dir, onGetPoint, sampledGroupRadius);
                 
                 if (spawnCentreBullet && numPerGroup > 1)
                     onGetPoint?.Invoke(point, dir);
@@ -121,22 +131,27 @@ namespace BulletFury
         /// <param name="onGetPoint"> a function to run for every point that has been found </param>
         public void Spawn(Action<Vector2, Vector2> onGetPoint, Squirrel3 rnd)
         {
+            var sampledArc = arc.GetValue(rnd);
+            var sampledRadius = radius.GetValue(rnd);
+            var sampledDirectionArc = directionArc.GetValue(rnd);
+            var sampledGroupRadius = groupRadius.GetValue(rnd);
+
             // initialise the array
             var points = new Vector2[numPoints];
             // take a first pass and add some points to every side
 
-            var offset = arc / (2 * numPoints) - ((0.5f * arc)) + 90f;
-            var anglePerSide = arc / numPoints;
+            var offset = sampledArc / (2 * numPoints) - ((0.5f * sampledArc)) + 90f;
+            var anglePerSide = sampledArc / numPoints;
 
             if (numPoints == 1)
             {
-                SpawnLine(onGetPoint, rnd);
+                SpawnLine(onGetPoint, rnd, sampledDirectionArc, sampledRadius, sampledGroupRadius);
                 return;
             }
 
             for (int i = 0; i < numPoints; i++)
             {
-                var angle = (!randomise ? i * anglePerSide : rnd.Next() * arc) + offset;  
+                var angle = (!randomise ? i * anglePerSide : rnd.Next() * sampledArc) + offset;  
 
                 angle *= Mathf.Deg2Rad;
                 points[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
@@ -167,7 +182,7 @@ namespace BulletFury
 
                 if (spawnDir == SpawnDir.Randomised)
                 {
-                    var rndAngle = rnd.Next() * directionArc * Mathf.Deg2Rad;
+                    var rndAngle = rnd.Next() * sampledDirectionArc * Mathf.Deg2Rad;
                     dir = new Vector2(Mathf.Cos(rndAngle), Mathf.Sin(rndAngle));
                 }
                 
@@ -178,13 +193,13 @@ namespace BulletFury
                 if (numPerSide == 1)
                 {
                     if (numPerGroup == 1)
-                        onGetPoint?.Invoke(points[i] * radius, dir);
+                        onGetPoint?.Invoke(points[i] * sampledRadius, dir);
                     else 
-                        SpawnGroup(points[i] * radius, dir, onGetPoint);
+                        SpawnGroup(points[i] * sampledRadius, dir, onGetPoint, sampledGroupRadius);
                     
                     
                     if (spawnCentreBullet && numPerGroup > 1)
-                        onGetPoint?.Invoke(points[i] * radius, dir);
+                        onGetPoint?.Invoke(points[i] * sampledRadius, dir);
                 }
             }
 
@@ -216,7 +231,7 @@ namespace BulletFury
                         continue;
                     }
                     var point = Vector2.Lerp(points[i], points[next], t);
-                    point *= radius;
+                    point *= sampledRadius;
 
                     Vector2 dir;
                     switch (spawnDir)
@@ -225,7 +240,7 @@ namespace BulletFury
                             dir = direction;
                             break;
                         case SpawnDir.Randomised:
-                            var rndAngle = rnd.Next() * directionArc * Mathf.Deg2Rad;
+                            var rndAngle = rnd.Next() * sampledDirectionArc * Mathf.Deg2Rad;
                             dir = new Vector2(Mathf.Cos(rndAngle), Mathf.Sin(rndAngle));
                             break;
                         case SpawnDir.Spherised:
