@@ -1,0 +1,14 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
+    <Style src="../BulletSpawnerStyle.uss" />
+    <ui:VisualElement name="RenderData" class="panel" style="flex-grow: 1;">
+        <ui:VisualElement name="RenderHeader" class="header" style="flex-grow: 1; overflow: visible; flex-wrap: nowrap;">
+            <ui:Label tabindex="-1" text="RenderData" display-tooltip-when-elided="true" name="Title" class="title" />
+            <uie:ObjectField binding-path="sharedData" name="SharedDataSO" data-source-type="BulletFury.SharedRenderDataSO, WayfarerGames.BulletFury" tooltip="Useful for when you&apos;ve got lots of objects shooting similar bullets (same texture/render priority) - sharing the render data between them with a scriptable object will batch draw calls" style="flex-shrink: 1;" />
+            <ui:Button text="Create" name="Create" style="margin-left: 10px;" />
+        </ui:VisualElement>
+        <ui:VisualElement name="TextureSettings" class="body" style="flex-grow: 1; visibility: visible; display: flex;">
+            <Wayfarer_Games.BulletFury.RenderData.RenderDataVisualElement name="SingleData" />
+            <Wayfarer_Games.BulletFury.RenderData.RenderDataVisualElement name="SharedData" style="flex-basis: 100%;" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

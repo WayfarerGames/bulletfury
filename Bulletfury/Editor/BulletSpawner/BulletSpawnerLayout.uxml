@@ -1,0 +1,78 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
+    <Style src="../BulletSpawnerStyle.uss" />
+    <uie:PropertyField name="Script" binding-path="m_Script" />
+    <ui:VisualElement name="MainData" class="main-body" style="flex-grow: 1;">
+        <ui:VisualElement name="SpawnerHeaderRow" class="spawner-header-row">
+            <ui:Label text="Bullet Spawner" class="section-main-title spawner-header-title" />
+            <ui:Label name="TotalPerformanceImpactPill" text="Total Performance Impact: High" class="module-performance-pill total-performance-impact-pill collapsed" />
+        </ui:VisualElement>
+        <Wayfarer_Games.BulletFury.RenderData.SharedRenderDataVisualElement binding-path="renderData" name="RenderData" class="settings-card settings-card-light" style="flex-grow: 1;" />
+        <ui:VisualElement name="Main" class="panel settings-card settings-card-light" style="flex-grow: 1;">
+            <ui:VisualElement name="MainHeader" class="header section-header-clickable">
+                <ui:Label text="Bullet Settings" class="title subsection-title" />
+            </ui:VisualElement>
+            <ui:BindableElement binding-path="main" name="VisualBody" class="body">
+                <uie:PropertyField binding-path="FireMode" name="FireMode" />
+                <uie:PropertyField binding-path="PlayOnEnable" name="PlayOnEnable" />
+                <uie:PropertyField binding-path="FireRate" name="FireRate" />
+                <uie:PropertyField binding-path="Damage" name="Damage" />
+                <uie:PropertyField binding-path="Lifetime" name="Lifetime" />
+                <uie:PropertyField binding-path="Speed" name="Speed" />
+                <uie:PropertyField binding-path="StartColor" name="StartColor" />
+                <uie:PropertyField binding-path="StartSize" name="StartSize" />
+                <uie:PropertyField binding-path="UseRotationForDirection" name="UseRotation" />
+                <uie:PropertyField binding-path="MoveWithTransform" name="MoveWithTransform" />
+                <uie:PropertyField binding-path="RotateWithTransform" name="RotateWithTransform" />
+                <uie:PropertyField binding-path="ColliderType" name="ColliderType" />
+                <uie:PropertyField binding-path="ColliderSize" name="ColliderSize" />
+                <uie:PropertyField binding-path="CapsuleLength" name="ColliderSeparation" />
+            </ui:BindableElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="SpawnShape" class="panel settings-card settings-card-dark" style="flex-grow: 1;">
+            <ui:VisualElement name="ShapeHeader" class="header section-header-clickable" style="flex-grow: 1;">
+                <ui:Label tabindex="-1" text="Spawn Shape" display-tooltip-when-elided="true" name="Title" class="title subsection-title" />
+            </ui:VisualElement>
+            <ui:BindableElement binding-path="spawnShapeData" name="ShapeBody" class="body">
+                <uie:PropertyField binding-path="spawnDir" label="Spawn Direction" name="SpawnDir" />
+                <ui:HelpBox message-type="Info" text="Bullets will travel away from the center of the shape, which will create a circular pattern" name="SpawnDirHelp" />
+                <uie:PropertyField binding-path="numPoints" name="NumPoints" label="Corners" />
+                <uie:PropertyField binding-path="radius" name="Radius" label="Shape Radius" />
+                <uie:PropertyField binding-path="arc" name="Arc" label="Shape Arc" />
+                <uie:PropertyField name="NumPerSide" binding-path="numPerSide" label="Bullets Per Side" />
+                <ui:VisualElement name="Group" style="flex-grow: 1;">
+                    <uie:PropertyField name="NumPerGroup" binding-path="numPerGroup" label="Bullets Per Group" />
+                    <uie:PropertyField name="GroupRadius" binding-path="groupRadius" label="Group Radius" />
+                    <uie:PropertyField binding-path="spawnCentreBullet" name="SpawnCentre" />
+                    <uie:PropertyField name="GroupDirection" binding-path="groupDirection" />
+                </ui:VisualElement>
+                <uie:PropertyField name="RemoveFromEdge" binding-path="removeFromEdgePercent" label="Remove Percent" />
+            </ui:BindableElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="GroupData" class="panel settings-card settings-card-light" style="flex-grow: 1;">
+            <ui:VisualElement name="GroupHeader" class="header section-header-clickable" style="flex-grow: 1;">
+                <ui:Label tabindex="-1" text="Group Data" display-tooltip-when-elided="true" name="Title" class="title subsection-title" />
+            </ui:VisualElement>
+            <ui:BindableElement binding-path="burstData" name="GroupBody" class="body">
+                <uie:PropertyField binding-path="delay" name="Delay" />
+                <uie:PropertyField binding-path="maxActiveBullets" name="MaxActiveBullets" />
+                <uie:PropertyField binding-path="burstCount" name="BurstCount" />
+                <uie:PropertyField binding-path="burstDelay" name="BurstDelay" />
+                <uie:PropertyField binding-path="stackSpeedIncrease" name="StackSpeedIncrease" />
+                <uie:PropertyField binding-path="burstsUpdatePositionEveryBullet" name="BurstsUpdatePositionEveryBullet" />
+            </ui:BindableElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+    <ui:VisualElement name="ModulesPanel" class="main-body modules-panel">
+        <ui:VisualElement name="ModulesHeader" class="modules-header">
+            <ui:Label text="Modules" class="section-main-title" />
+        </ui:VisualElement>
+        <ui:VisualElement name="ModulesList" class="modules-list" />
+        <ui:VisualElement name="ModulesControls" class="modules-controls">
+            <ui:Button text="Add Module" name="AddModuleButton" class="modules-add-button" />
+            <ui:VisualElement name="AddModulePicker" class="add-module-picker collapsed">
+                <ui:TextField name="AddModuleSearchField" label="Search" class="add-module-search-field" />
+                <ui:VisualElement name="AddModuleResults" class="add-module-results" />
+            </ui:VisualElement>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

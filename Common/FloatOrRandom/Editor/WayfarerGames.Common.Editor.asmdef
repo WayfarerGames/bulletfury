@@ -1,0 +1,18 @@
+{
+    "name": "WayfarerGames.Common.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:12fd33505e9c049dabc070e732f3f74b"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

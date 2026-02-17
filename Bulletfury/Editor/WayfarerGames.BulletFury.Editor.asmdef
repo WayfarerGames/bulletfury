@@ -1,0 +1,20 @@
+{
+    "name": "WayfarerGames.BulletFury.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:12fd33505e9c049dabc070e732f3f74b",
+        "GUID:494b4031ef9e74089b2cf8f66121fd6f",
+        "GUID:49b49c76ee64f6b41bf28ef951cb0e50"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

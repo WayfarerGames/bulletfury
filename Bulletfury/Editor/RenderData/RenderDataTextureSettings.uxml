@@ -1,0 +1,28 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="True">
+    <Style src="../BulletSpawnerStyle.uss" />
+    <ui:VisualElement name="Data" class="texture-settings" style="flex-grow: 1; overflow: hidden; flex-direction: row; flex-wrap: wrap;">
+        <uie:LayerField label="Render Layer" binding-path="Layer" style="flex-basis: 100%;" />
+        <uie:PropertyField binding-path="Priority" style="flex-basis: 100%;" />
+        <ui:VisualElement name="Space" class="spacer" style="flex-grow: 1;" />
+        <ui:VisualElement name="Data" style="flex-grow: 1;">
+            <uie:ObjectField type="UnityEngine.Texture2D, UnityEngine.CoreModule" binding-path="Texture" name="Texture" allow-scene-objects="false" />
+            <uie:PropertyField binding-path="Animated" name="Animated" />
+            <ui:VisualElement name="AnimatedProperties" style="flex-grow: 1; display: flex;">
+                <uie:PropertyField binding-path="Rows" name="Rows" />
+                <uie:PropertyField binding-path="Columns" name="Columns" />
+                <uie:PropertyField binding-path="PerFrameLength" name="PerFrameLength" />
+                <ui:VisualElement style="flex-grow: 1; flex-direction: row;">
+                    <ui:Button text="&lt;" display-tooltip-when-elided="true" name="PreviousFrame" />
+                    <ui:Label tabindex="-1" text="frame 0 / 0" display-tooltip-when-elided="true" name="FrameCount" style="-unity-text-align: middle-left;" />
+                    <ui:Button text="&gt;" display-tooltip-when-elided="true" name="NextFrame" />
+                </ui:VisualElement>
+            </ui:VisualElement>
+        </ui:VisualElement>
+        <ui:VisualElement name="PreviewContainer" class="preview">
+            <ui:Image name="Preview">
+                <ui:VisualElement name="Collider" class="collider-display" />
+                <ui:VisualElement name="Collider" class="collider-display" />
+            </ui:Image>
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

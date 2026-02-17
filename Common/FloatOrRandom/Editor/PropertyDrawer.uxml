@@ -1,0 +1,11 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../../../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <ui:VisualElement name="Container" class="unity-base-field unity-composite-field unity-vector2-field unity-base-field__inspector-field" style="flex-grow: 0;">
+        <ui:Label text="Value" name="Label" class="unity-base-field__label unity-composite-field__label unity-vector2-field__label" />
+        <ui:VisualElement picking-mode="Ignore" class="unity-base-field__input unity-composite-field__input unity-vector2-field__input" style="flex-grow: 1;">
+            <ui:Toggle name="IsRandom" style="padding-right: 10px; padding-top: 2px;" />
+            <ui:FloatField placeholder-text="0" name="Min" hide-placeholder-on-focus="true" class="unity-composite-field__field unity-composite-field__field--first" style="padding-right: 0;" />
+            <ui:Label text="To" name="To" style="padding-right: 10px; -unity-text-align: middle-left;" />
+            <ui:FloatField placeholder-text="0" name="Max" hide-placeholder-on-focus="false" class="unity-composite-field__field" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>
