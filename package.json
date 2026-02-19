@@ -1,6 +1,6 @@
 {
   "name": "com.wayfarergames.bulletfury",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "displayName": "Wayfarer Games Bulletfury",
   "description": "A bullet spawning and rendering framework for Unity.",
   "unity": "6000.0",
@@ -15,13 +15,19 @@
     "2d",
     "urp"
   ],
-  "documentationUrl": "https://wayfarer-games.com/bulletfury-documentation",
   "changelogUrl": "https://github.com/wayfarergames/bulletfury/blob/main/com.wayfarergames.bulletfury/CHANGELOG.md",
   "licensesUrl": "https://github.com/wayfarergames/bulletfury/blob/main/com.wayfarergames.bulletfury/LICENSE.md",
   "repository": {
     "type": "git",
     "url": "https://github.com/wayfarergames/bulletfury.git"
   },
+  "samples": [
+    {
+      "displayName": "Demo Scene",
+      "description": "Starter sample content for the Bulletfury demo project.",
+      "path": "Samples~/Demo Scene"
+    }
+  ],
   "dependencies": {
     "com.unity.burst": "1.8.27",
     "com.unity.collections": "2.6.2",

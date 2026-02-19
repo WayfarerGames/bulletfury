@@ -7,10 +7,6 @@ Compatibility:
 - Unity 6 and above
 - URP only
 
-Full docs for setup, modules, patterns, and extension:
-
-- Online: https://wayfarer-games.com/bulletfury-documentation
-
 ## Install from Git
 
 Add this to `Packages/manifest.json` in a Unity project:
@@ -18,6 +14,12 @@ Add this to `Packages/manifest.json` in a Unity project:
 ```json
 "com.wayfarergames.bulletfury": "https://github.com/WayfarerGames/bulletfury.git"
 ```
+
+## Samples
+
+This package includes a `Demo Scene` sample via Unity Package Manager.
+
+Open Package Manager, select Bulletfury, then import the sample from the `Samples` section.
 
 ## Paid Version
 
