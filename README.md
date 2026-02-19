@@ -7,6 +7,10 @@ Compatibility:
 - Unity 6 and above
 - URP only
 
+Full docs for setup, modules, patterns, and extension:
+
+- https://wayfarer-games.com/bulletfury-documentation
+
 ## Install from Git
 
 Add this to `Packages/manifest.json` in a Unity project:
