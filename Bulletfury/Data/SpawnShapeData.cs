@@ -221,9 +221,7 @@ namespace BulletFury
                 for (int j = 0; j < numPerSide; ++j)
                 {
                     // position the current point a percentage of the way between each end of the side
-                    var t = j / (float) numPerSide;
-                    
-                    t += (1f / numPerSide) / 2f;
+                    var t = j / (float)(numPerSide - 1);
 
                     if (t > 0.5f - removeFromEdgePercent / 2f && t < 0.5f + removeFromEdgePercent / 2f)
                     {

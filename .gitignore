@@ -1,0 +1,10 @@
+# Keep premium source local only
+/Bulletfury.Premium.meta
+/Bulletfury.Premium/
+/Bulletfury.Premium/**
+
+# Local machine/editor files
+.DS_Store
+.idea/
+.cursor/
+.codex/

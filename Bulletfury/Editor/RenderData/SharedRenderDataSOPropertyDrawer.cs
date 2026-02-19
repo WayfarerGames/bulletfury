@@ -14,7 +14,6 @@ namespace Wayfarer_Games.BulletFury.RenderData
             var root = new VisualElement();
             if (property.objectReferenceValue == null) return root;
             var serializedObject = new SerializedObject(property.objectReferenceValue);
-            Debug.Log(serializedObject.FindProperty("data").displayName);
             var prop = new PropertyField(serializedObject.FindProperty("data"));
             prop.Bind(serializedObject);
             root.Add(prop);

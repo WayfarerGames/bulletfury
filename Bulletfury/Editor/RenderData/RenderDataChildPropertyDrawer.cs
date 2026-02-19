@@ -155,7 +155,6 @@ namespace Wayfarer_Games.BulletFury.RenderData
         {
             //_preview.style.backgroundImage = evt.newValue as Texture2D;
             _preview.image = evt.newValue as Texture2D;
-            Debug.Log($"Setting texture from {evt.previousValue} to {evt.newValue} on object {_preview.parent.parent.parent.parent.parent.parent.name}");
         }
 
     }

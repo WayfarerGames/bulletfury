@@ -1,11 +1,26 @@
 {
   "name": "com.wayfarergames.bulletfury",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "displayName": "Wayfarer Games Bulletfury",
   "description": "A bullet spawning and rendering framework for Unity.",
-  "unity": "2022.3",
+  "unity": "6000.0",
   "author": {
-    "name": "Wayfarer Games"
+    "name": "Wayfarer Games",
+    "url": "https://wayfarer-games.com"
+  },
+  "keywords": [
+    "bullets",
+    "bullet-hell",
+    "projectiles",
+    "2d",
+    "urp"
+  ],
+  "documentationUrl": "https://wayfarer-games.com/bulletfury-documentation",
+  "changelogUrl": "https://github.com/wayfarergames/bulletfury/blob/main/com.wayfarergames.bulletfury/CHANGELOG.md",
+  "licensesUrl": "https://github.com/wayfarergames/bulletfury/blob/main/com.wayfarergames.bulletfury/LICENSE.md",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wayfarergames/bulletfury.git"
   },
   "dependencies": {
     "com.unity.burst": "1.8.27",

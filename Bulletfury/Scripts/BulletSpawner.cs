@@ -518,17 +518,25 @@ namespace BulletFury
                 _bulletCount, _queuedRenderData.Value.cam);
         }
 
+        private bool TryGetActiveRenderData(out BulletRenderData activeRenderData)
+        {
+            activeRenderData = renderData.Data;
+            return activeRenderData != null;
+        }
+
         private void Update()
         {
             if (_simulationPaused)
             {
                 // Keep render data live while simulation is paused.
-                if (_queuedRenderData == null)
-                    _queuedRenderData = (renderData, renderData.Data.Camera);
+                if (_queuedRenderData == null && TryGetActiveRenderData(out var activeRenderData) &&
+                    activeRenderData.Texture != null)
+                    _queuedRenderData = (activeRenderData, activeRenderData.Camera);
             }
             else
             {
-                UpdateAllBullets(renderData.Data.Camera, Time.deltaTime);
+                if (TryGetActiveRenderData(out var activeRenderData))
+                    UpdateAllBullets(activeRenderData.Camera, Time.deltaTime);
             }
             if (_queuedRenderData == null || _disposed || _bulletCount == 0) return;
             float priority = -_queuedRenderData.Value.renderData.Priority;
@@ -551,7 +559,8 @@ namespace BulletFury
         {
             if (!_bullets.IsCreated || _disposed)
                 EnsureSimulationInitialized();
-            if (!_bulletsFree || this == null || renderData.Data.Texture == null) return;
+            if (!_bulletsFree || this == null) return;
+            if (!TryGetActiveRenderData(out var activeRenderData) || activeRenderData.Texture == null) return;
             var deltaTime = Mathf.Max(0f, dt ?? Time.deltaTime);
             _runtime.AdvanceSimulation(deltaTime);
 
@@ -567,7 +576,7 @@ namespace BulletFury
             {
                 _previousPos = transform.position;
                 _previousRot = transform.eulerAngles;
-                _queuedRenderData = (renderData, cam);
+                _queuedRenderData = (activeRenderData, cam);
                 return;
             }
 
@@ -665,7 +674,7 @@ namespace BulletFury
             
             CompactAliveBullets();
             
-            _queuedRenderData = (renderData, cam);
+            _queuedRenderData = (activeRenderData, cam);
 
             _handlerCachePruneCounter++;
             if (_handlerCachePruneCounter >= 120)
