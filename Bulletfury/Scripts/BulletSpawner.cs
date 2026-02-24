@@ -967,7 +967,7 @@ namespace BulletFury
 
         public void Spawn(Vector3 position, Vector3 up, float deltaTime)
         {
-            TryStartSpawnSequence(deltaTime, null, position, up, false);
+            TryStartSpawnSequence(deltaTime, null, position, up,  Main.FireMode == FireMode.Manual);
         }
 
         /// <summary>
@@ -982,7 +982,7 @@ namespace BulletFury
         public void Spawn(Transform obj, float deltaTime)
         {
             if (obj == null) return;
-            TryStartSpawnSequence(deltaTime, obj, obj.position, obj.up, false);
+            TryStartSpawnSequence(deltaTime, obj, obj.position, obj.up,  Main.FireMode == FireMode.Manual);
         }
 
         private bool TryStartSpawnSequence(

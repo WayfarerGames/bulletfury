@@ -6,13 +6,12 @@ using BulletFury;
 using BulletFury.Data;
 using Unity.Collections;
 using UnityEditor;
-using UnityEditor.Build;
-using UnityEditor.Rendering;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.UIElements;
 using Wayfarer_Games.BulletFury.RenderData;
+using Wayfarer_Games.Common;
 using Object = UnityEngine.Object;
 
 namespace Wayfarer_Games.BulletFury
@@ -57,7 +56,22 @@ namespace Wayfarer_Games.BulletFury
         public override VisualElement CreateInspectorGUI()
         {
             var root = new VisualElement();
-            UXML.CloneTree(root);
+            var visualTree = UXML;
+            if (visualTree == null)
+            {
+                visualTree = AssetPathUtility.LoadAssetAtKnownRoots<VisualTreeAsset>(
+                    "Bulletfury/Editor/BulletSpawner/BulletSpawnerLayout.uxml");
+            }
+
+            if (visualTree == null)
+            {
+                root.Add(new HelpBox(
+                    "BulletSpawner custom inspector could not load its UXML layout asset.",
+                    HelpBoxMessageType.Error));
+                return root;
+            }
+
+            visualTree.CloneTree(root);
             _root = root;
             BuildRenderData(ref root);
             BuildVisualData(ref root);
