@@ -123,7 +123,12 @@ namespace BulletFury
         
         private static bool IsNaN(Quaternion q) 
         {
-            return float.IsNaN(q.x) || float.IsNaN(q.y) || float.IsNaN(q.z) || float.IsNaN(q.w) || q.w == 0;
+            if (float.IsNaN(q.x) || float.IsNaN(q.y) || float.IsNaN(q.z) || float.IsNaN(q.w))
+                return true;
+
+            // A 180-degree 2D rotation has w == 0, so only reject truly degenerate quaternions.
+            var sqrMagnitude = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+            return sqrMagnitude < 0.00000001f;
         }
     }
 }
