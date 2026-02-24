@@ -711,7 +711,12 @@ namespace BulletFury
 
         private static bool IsInvalidRotation(Quaternion q)
         {
-            return float.IsNaN(q.x) || float.IsNaN(q.y) || float.IsNaN(q.z) || float.IsNaN(q.w) || q.w == 0;
+            if (float.IsNaN(q.x) || float.IsNaN(q.y) || float.IsNaN(q.z) || float.IsNaN(q.w))
+                return true;
+
+            // A valid 180-degree rotation quaternion has w == 0.
+            var sqrMagnitude = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+            return sqrMagnitude < 0.00000001f;
         }
 
         private ISpawnerRuntimeModule ResolveRuntimeModule()
