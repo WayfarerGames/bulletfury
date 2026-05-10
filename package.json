@@ -1,6 +1,6 @@
 {
   "name": "com.wayfarergames.bulletfury",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "displayName": "Wayfarer Games Bulletfury",
   "description": "A bullet spawning and rendering framework for Unity.",
   "unity": "6000.0",

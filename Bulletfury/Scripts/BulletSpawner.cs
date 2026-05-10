@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using BulletFury.Data;
 using Unity.Collections;
 using Unity.Jobs;
@@ -23,11 +22,31 @@ namespace BulletFury
     }
 
     /// <summary>
-    /// Optional module interface for multithreaded execution.
-    /// Keep implementations stateless and avoid Unity API calls inside Execute.
+    /// Module interface for multithreaded execution via Unity's Job system.
+    /// Implementers schedule a Burst-compiled <see cref="Unity.Jobs.IJobParallelFor"/> that
+    /// reads/writes <see cref="BulletContainer"/>s in place. The synchronous
+    /// <see cref="IBulletModule.Execute"/> path is kept as a fallback for editor previews
+    /// and one-off calls; the spawner uses <see cref="Schedule"/> at runtime.
+    ///
+    /// Implementations must:
+    ///  - own any <see cref="Unity.Collections.NativeArray{T}"/> resources they pass into the job
+    ///    (e.g. baked curves via <see cref="NativeCurve"/>) and release them in
+    ///    <see cref="DisposeJobResources"/>.
+    ///  - not touch Unity API on the worker thread; pre-bake any managed data into native
+    ///    collections inside <see cref="Schedule"/> before the job runs.
     /// </summary>
     public interface IParallelBulletModule : IBulletModule
     {
+        /// <summary>
+        /// Schedule the module's job, chained after <paramref name="dependency"/>.
+        /// The returned handle must include this module's work.
+        /// </summary>
+        JobHandle Schedule(NativeArray<BulletContainer> bullets, int count, float deltaTime, JobHandle dependency);
+
+        /// <summary>
+        /// Release any native resources allocated by previous Schedule calls.
+        /// </summary>
+        void DisposeJobResources();
     }
     
     public interface IBulletInitModule : IBaseBulletModule
@@ -100,7 +119,6 @@ namespace BulletFury
         private readonly List<HitDispatchRecord> _hitDispatchQueue = new(256);
         private readonly List<IParallelBulletModule> _parallelBulletModules = new();
         private readonly List<IBulletModule> _mainThreadBulletModules = new();
-        private BulletContainer[] _parallelModuleBuffer = Array.Empty<BulletContainer>();
         private bool _moduleExecutionCachesDirty = true;
 
         private NativeArray<BulletContainer> _bullets;
@@ -241,6 +259,7 @@ namespace BulletFury
                 _bulletColors.Dispose();
             if (_bulletTimes.IsCreated)
                 _bulletTimes.Dispose();
+            DisposeParallelModuleResources();
             _handlerCache.Clear();
             _hitDispatchQueue.Clear();
             _disposed = true;
@@ -600,11 +619,12 @@ namespace BulletFury
                 Transforms = _bulletTransforms
             };
 
-            var handle = job.Schedule(_bulletCount, 256);
-            handle.Complete();
             if (_moduleExecutionCachesDirty)
                 RebuildModuleExecutionCaches();
-            ExecuteParallelModules(deltaTime);
+
+            var handle = job.Schedule(_bulletCount, 256);
+            handle = ScheduleParallelModules(handle, deltaTime);
+            handle.Complete();
 
             for (int i = 0; i < _bulletCount; ++i)
             {
@@ -750,41 +770,32 @@ namespace BulletFury
             _moduleExecutionCachesDirty = false;
         }
 
-        private void EnsureParallelModuleBufferCapacity(int minLength)
-        {
-            if (_parallelModuleBuffer.Length >= minLength)
-                return;
-
-            int newLength = _parallelModuleBuffer.Length == 0 ? 256 : _parallelModuleBuffer.Length;
-            while (newLength < minLength)
-                newLength *= 2;
-            _parallelModuleBuffer = new BulletContainer[newLength];
-        }
-
-        private void ExecuteParallelModules(float deltaTime)
+        /// <summary>
+        /// Schedule every <see cref="IParallelBulletModule"/> as a Burst-compiled job chained
+        /// after <paramref name="dependency"/>. Modules execute in registration order; each
+        /// depends on the previous because they share the bullets buffer.
+        /// On WebGL the Job system runs jobs inline on the main thread (with Burst), which
+        /// avoids the threadpool deadlock that <c>Parallel.For</c> suffered from there.
+        /// </summary>
+        private JobHandle ScheduleParallelModules(JobHandle dependency, float deltaTime)
         {
             if (_parallelBulletModules.Count == 0 || _bulletCount == 0)
-                return;
+                return dependency;
 
-            EnsureParallelModuleBufferCapacity(_bulletCount);
-            for (int i = 0; i < _bulletCount; i++)
-                _parallelModuleBuffer[i] = _bullets[i];
-
+            var handle = dependency;
             foreach (var module in _parallelBulletModules)
+                handle = module.Schedule(_bullets, _bulletCount, deltaTime, handle);
+
+            return handle;
+        }
+
+        private void DisposeParallelModuleResources()
+        {
+            foreach (var module in allModules)
             {
-                Parallel.For(0, _bulletCount, i =>
-                {
-                    var bullet = _parallelModuleBuffer[i];
-                    if (bullet.Dead == 1 || bullet.EndOfLife == 1)
-                        return;
-
-                    module.Execute(ref bullet, deltaTime);
-                    _parallelModuleBuffer[i] = bullet;
-                });
+                if (module is IParallelBulletModule parallelModule)
+                    parallelModule.DisposeJobResources();
             }
-
-            for (int i = 0; i < _bulletCount; i++)
-                _bullets[i] = _parallelModuleBuffer[i];
         }
 
         private bool ExecuteDieModules(ref BulletContainer bullet, bool isCollision, GameObject collidingObject)
